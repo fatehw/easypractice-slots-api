@@ -5,6 +5,7 @@ export default async function handler(req, res) {
 
     const start = req.query.start;
     const end = req.query.end;
+    const debug = req.query.debug === '1';
 
     if (!start || !end) {
       return res.status(400).json({ error: 'Missing start or end' });
@@ -25,15 +26,19 @@ export default async function handler(req, res) {
       { headers },
     );
 
+    const openingText = await openingRes.text();
+    let openingJson = null;
+    try {
+      openingJson = JSON.parse(openingText);
+    } catch (_) {}
+
     if (!openingRes.ok) {
-      const detail = await openingRes.text();
       return res.status(openingRes.status).json({
         error: 'Opening times request failed',
-        detail,
+        detail: openingText,
       });
     }
 
-    const openingJson = await openingRes.json();
     const openingTimes = openingJson?.data?.times || {};
 
     const bookingsRes = await fetch(
@@ -43,15 +48,19 @@ export default async function handler(req, res) {
       { headers },
     );
 
+    const bookingsText = await bookingsRes.text();
+    let bookingsJson = null;
+    try {
+      bookingsJson = JSON.parse(bookingsText);
+    } catch (_) {}
+
     if (!bookingsRes.ok) {
-      const detail = await bookingsRes.text();
       return res.status(bookingsRes.status).json({
         error: 'Bookings request failed',
-        detail,
+        detail: bookingsText,
       });
     }
 
-    const bookingsJson = await bookingsRes.json();
     const bookings = Array.isArray(bookingsJson?.data)
       ? bookingsJson.data
       : Array.isArray(bookingsJson)
@@ -99,9 +108,15 @@ export default async function handler(req, res) {
         booking.start_at ||
         booking.starts_at ||
         booking.date ||
+        booking.start_time ||
         null;
 
-      const endValue = booking.end || booking.end_at || booking.ends_at || null;
+      const endValue =
+        booking.end ||
+        booking.end_at ||
+        booking.ends_at ||
+        booking.end_time ||
+        null;
 
       if (!startValue || !endValue) return null;
 
@@ -110,13 +125,33 @@ export default async function handler(req, res) {
 
       if (isNaN(startDt.getTime()) || isNaN(endDt.getTime())) return null;
 
-      return { startDt, endDt };
+      return {
+        startRaw: startValue,
+        endRaw: endValue,
+        startDt,
+        endDt,
+      };
     }
 
     const bookedByDate = {};
+    const parsedBookingsPreview = [];
 
     for (const booking of bookings) {
       const parsed = parseBookingDateTime(booking);
+
+      parsedBookingsPreview.push({
+        rawKeys: Object.keys(booking || {}),
+        raw: booking,
+        parsed: parsed
+          ? {
+              startRaw: parsed.startRaw,
+              endRaw: parsed.endRaw,
+              startIso: parsed.startDt.toISOString(),
+              endIso: parsed.endDt.toISOString(),
+            }
+          : null,
+      });
+
       if (!parsed) continue;
 
       const dateKey = formatDate(parsed.startDt);
@@ -128,6 +163,8 @@ export default async function handler(req, res) {
       bookedByDate[dateKey].push([startMin, endMin]);
     }
 
+    const generationPreview = [];
+
     const current = new Date(`${start}T00:00:00`);
     const last = new Date(`${end}T00:00:00`);
 
@@ -138,6 +175,15 @@ export default async function handler(req, res) {
       const isClosed = openingTimes[`${wk}_closed`];
       const dayStart = openingTimes[`${wk}_start`];
       const dayEnd = openingTimes[`${wk}_end`];
+
+      generationPreview.push({
+        date: dateKey,
+        weekday: wk,
+        isClosed,
+        dayStart,
+        dayEnd,
+        booked: bookedByDate[dateKey] || [],
+      });
 
       if (!isClosed && dayStart && dayEnd) {
         const openMin = toMinutes(dayStart);
@@ -166,11 +212,29 @@ export default async function handler(req, res) {
       current.setDate(current.getDate() + 1);
     }
 
+    if (debug) {
+      return res.status(200).json({
+        slots,
+        debug: {
+          calendarId,
+          openingTimes,
+          bookingsCount: bookings.length,
+          bookingsSample: parsedBookingsPreview.slice(0, 3),
+          generationPreview: generationPreview.slice(0, 10),
+          rawOpeningSample: openingJson,
+          rawBookingsSample: Array.isArray(bookingsJson?.data)
+            ? bookingsJson.data.slice(0, 3)
+            : bookingsJson,
+        },
+      });
+    }
+
     return res.status(200).json({ slots });
   } catch (error) {
     return res.status(500).json({
       error: 'Unexpected error',
       detail: error.message,
+      stack: error.stack,
     });
   }
 }

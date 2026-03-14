@@ -39,7 +39,7 @@ export default async function handler(req, res) {
       });
     }
 
-    const openingTimes = openingJson?.data?.times || {};
+    const openingTimes = openingJson?.data?.times || openingJson?.times || {};
 
     const bookingsRes = await fetch(
       `https://system.easypractice.net/api/v1/bookings?calendar_id=${encodeURIComponent(
@@ -63,9 +63,11 @@ export default async function handler(req, res) {
 
     const bookings = Array.isArray(bookingsJson?.data)
       ? bookingsJson.data
-      : Array.isArray(bookingsJson)
-        ? bookingsJson
-        : [];
+      : Array.isArray(bookingsJson?.bookings)
+        ? bookingsJson.bookings
+        : Array.isArray(bookingsJson)
+          ? bookingsJson
+          : [];
 
     const SLOT_MINUTES = 15;
     const slots = {};

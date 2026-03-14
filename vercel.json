@@ -1,7 +1,0 @@
-{
-    "functions": {
-        "api/slots.js": {
-            "runtime": "nodejs20.x"
-        }
-    }
-}

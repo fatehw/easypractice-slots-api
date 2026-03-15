@@ -1,18 +1,33 @@
+function sendJson(res, status, data) {
+  res.status(status);
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  return res.send(JSON.stringify(data));
+}
+
 export default async function handler(req, res) {
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    return res.status(200).end();
+  }
+
   try {
     const calendarId = process.env.EASYPRACTICE_CALENDAR_ID;
     const token = process.env.EASYPRACTICE_TOKEN;
 
     const start = req.query.start;
     const end = req.query.end;
-    const debug = req.query.debug === '1';
 
     if (!start || !end) {
-      return res.status(400).json({ error: 'Missing start or end' });
+      return sendJson(res, 400, { error: 'Missing start or end' });
     }
 
     if (!calendarId || !token) {
-      return res.status(500).json({ error: 'Missing environment variables' });
+      return sendJson(res, 500, { error: 'Missing environment variables' });
     }
 
     const headers = {
@@ -33,7 +48,7 @@ export default async function handler(req, res) {
     } catch (_) {}
 
     if (!openingRes.ok) {
-      return res.status(openingRes.status).json({
+      return sendJson(res, openingRes.status, {
         error: 'Opening times request failed',
         detail: openingText,
       });
@@ -55,7 +70,7 @@ export default async function handler(req, res) {
     } catch (_) {}
 
     if (!bookingsRes.ok) {
-      return res.status(bookingsRes.status).json({
+      return sendJson(res, bookingsRes.status, {
         error: 'Bookings request failed',
         detail: bookingsText,
       });
@@ -127,33 +142,13 @@ export default async function handler(req, res) {
 
       if (isNaN(startDt.getTime()) || isNaN(endDt.getTime())) return null;
 
-      return {
-        startRaw: startValue,
-        endRaw: endValue,
-        startDt,
-        endDt,
-      };
+      return { startDt, endDt };
     }
 
     const bookedByDate = {};
-    const parsedBookingsPreview = [];
 
     for (const booking of bookings) {
       const parsed = parseBookingDateTime(booking);
-
-      parsedBookingsPreview.push({
-        rawKeys: Object.keys(booking || {}),
-        raw: booking,
-        parsed: parsed
-          ? {
-              startRaw: parsed.startRaw,
-              endRaw: parsed.endRaw,
-              startIso: parsed.startDt.toISOString(),
-              endIso: parsed.endDt.toISOString(),
-            }
-          : null,
-      });
-
       if (!parsed) continue;
 
       const dateKey = formatDate(parsed.startDt);
@@ -165,8 +160,6 @@ export default async function handler(req, res) {
       bookedByDate[dateKey].push([startMin, endMin]);
     }
 
-    const generationPreview = [];
-
     const current = new Date(`${start}T00:00:00`);
     const last = new Date(`${end}T00:00:00`);
 
@@ -177,15 +170,6 @@ export default async function handler(req, res) {
       const isClosed = openingTimes[`${wk}_closed`];
       const dayStart = openingTimes[`${wk}_start`];
       const dayEnd = openingTimes[`${wk}_end`];
-
-      generationPreview.push({
-        date: dateKey,
-        weekday: wk,
-        isClosed,
-        dayStart,
-        dayEnd,
-        booked: bookedByDate[dateKey] || [],
-      });
 
       if (!isClosed && dayStart && dayEnd) {
         const openMin = toMinutes(dayStart);
@@ -214,29 +198,11 @@ export default async function handler(req, res) {
       current.setDate(current.getDate() + 1);
     }
 
-    if (debug) {
-      return res.status(200).json({
-        slots,
-        debug: {
-          calendarId,
-          openingTimes,
-          bookingsCount: bookings.length,
-          bookingsSample: parsedBookingsPreview.slice(0, 3),
-          generationPreview: generationPreview.slice(0, 10),
-          rawOpeningSample: openingJson,
-          rawBookingsSample: Array.isArray(bookingsJson?.data)
-            ? bookingsJson.data.slice(0, 3)
-            : bookingsJson,
-        },
-      });
-    }
-
-    return res.status(200).json({ slots });
+    return sendJson(res, 200, { slots });
   } catch (error) {
-    return res.status(500).json({
+    return sendJson(res, 500, {
       error: 'Unexpected error',
       detail: error.message,
-      stack: error.stack,
     });
   }
 }

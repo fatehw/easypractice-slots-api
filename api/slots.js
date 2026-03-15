@@ -76,129 +76,218 @@ export default async function handler(req, res) {
       });
     }
 
-    const bookings = Array.isArray(bookingsJson?.data)
-      ? bookingsJson.data
-      : Array.isArray(bookingsJson?.bookings)
-        ? bookingsJson.bookings
-        : Array.isArray(bookingsJson)
-          ? bookingsJson
-          : [];
+     const pausesRes = await fetch(
+       `https://system.easypractice.net/api/v1/calendars/${calendarId}/pauses?page_size=200`,
+       { headers },
+     );
 
-    const SLOT_MINUTES = 15;
-    const slots = {};
+     const pausesText = await pausesRes.text();
+     let pausesJson = null;
+     try {
+       pausesJson = JSON.parse(pausesText);
+     } catch (_) {}
 
-    function pad(n) {
-      return String(n).padStart(2, '0');
-    }
+     if (!pausesRes.ok) {
+       return sendJson(res, pausesRes.status, {
+         error: 'Pauses request failed',
+         detail: pausesText,
+       });
+     }
 
-    function formatDate(d) {
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    }
+     const bookings = Array.isArray(bookingsJson?.data)
+       ? bookingsJson.data
+       : Array.isArray(bookingsJson?.bookings)
+         ? bookingsJson.bookings
+         : Array.isArray(bookingsJson)
+           ? bookingsJson
+           : [];
 
-    function weekdayKey(date) {
-      const map = {
-        0: 'sunday',
-        1: 'monday',
-        2: 'tuesday',
-        3: 'wednesday',
-        4: 'thursday',
-        5: 'friday',
-        6: 'saturday',
-      };
-      return map[date.getDay()];
-    }
+     const pauses = Array.isArray(pausesJson?.data)
+       ? pausesJson.data
+       : Array.isArray(pausesJson?.pauses)
+         ? pausesJson.pauses
+         : Array.isArray(pausesJson)
+           ? pausesJson
+           : [];
 
-    function toMinutes(hhmm) {
-      const [h, m] = hhmm.split(':').map(Number);
-      return h * 60 + m;
-    }
+     const SLOT_MINUTES = 15;
+     const slots = {};
 
-    function minutesToHHMM(mins) {
-      const h = Math.floor(mins / 60);
-      const m = mins % 60;
-      return `${pad(h)}:${pad(m)}`;
-    }
+     function pad(n) {
+       return String(n).padStart(2, '0');
+     }
 
-    function parseBookingDateTime(booking) {
-      const startValue =
-        booking.start ||
-        booking.start_at ||
-        booking.starts_at ||
-        booking.date ||
-        booking.start_time ||
-        null;
+     function formatDate(d) {
+       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+     }
 
-      const endValue =
-        booking.end ||
-        booking.end_at ||
-        booking.ends_at ||
-        booking.end_time ||
-        null;
+     function weekdayKey(date) {
+       const map = {
+         0: 'sunday',
+         1: 'monday',
+         2: 'tuesday',
+         3: 'wednesday',
+         4: 'thursday',
+         5: 'friday',
+         6: 'saturday',
+       };
+       return map[date.getDay()];
+     }
 
-      if (!startValue || !endValue) return null;
+     function toMinutes(hhmm) {
+       const [h, m] = hhmm.split(':').map(Number);
+       return h * 60 + m;
+     }
 
-      const startDt = new Date(startValue);
-      const endDt = new Date(endValue);
+     function minutesToHHMM(mins) {
+       const h = Math.floor(mins / 60);
+       const m = mins % 60;
+       return `${pad(h)}:${pad(m)}`;
+     }
 
-      if (isNaN(startDt.getTime()) || isNaN(endDt.getTime())) return null;
+     function normalizeTime(v) {
+       if (!v) return null;
+       return String(v).slice(0, 5);
+     }
 
-      return { startDt, endDt };
-    }
+     function buildPausesByDate(start, end, pauses) {
+       const map = {};
 
-    const bookedByDate = {};
+       function addPause(dateKey, startTime, endTime) {
+         if (!startTime || !endTime) return;
+         if (!map[dateKey]) map[dateKey] = [];
+         map[dateKey].push([toMinutes(startTime), toMinutes(endTime)]);
+       }
 
-    for (const booking of bookings) {
-      const parsed = parseBookingDateTime(booking);
-      if (!parsed) continue;
+       const current = new Date(`${start}T00:00:00`);
+       const last = new Date(`${end}T00:00:00`);
 
-      const dateKey = formatDate(parsed.startDt);
-      const startMin =
-        parsed.startDt.getHours() * 60 + parsed.startDt.getMinutes();
-      const endMin = parsed.endDt.getHours() * 60 + parsed.endDt.getMinutes();
+       while (current <= last) {
+         const dateKey = formatDate(current);
+         const weekday = current.getDay(); // 0=sun ... 6=sat
 
-      if (!bookedByDate[dateKey]) bookedByDate[dateKey] = [];
-      bookedByDate[dateKey].push([startMin, endMin]);
-    }
+         pauses.forEach((pause) => {
+           const pauseDate = pause.date || pause.pause_date || null;
+           const pauseWeekday =
+             typeof pause.weekday === 'number'
+               ? pause.weekday
+               : typeof pause.day_of_week === 'number'
+                 ? pause.day_of_week
+                 : null;
 
-    const current = new Date(`${start}T00:00:00`);
-    const last = new Date(`${end}T00:00:00`);
+           const startTime = normalizeTime(
+             pause.start_time || pause.start || pause.from,
+           );
+           const endTime = normalizeTime(
+             pause.end_time || pause.end || pause.to,
+           );
 
-    while (current <= last) {
-      const dateKey = formatDate(current);
-      const wk = weekdayKey(current);
+           // exact date pause
+           if (pauseDate && pauseDate === dateKey) {
+             addPause(dateKey, startTime, endTime);
+             return;
+           }
 
-      const isClosed = openingTimes[`${wk}_closed`];
-      const dayStart = openingTimes[`${wk}_start`];
-      const dayEnd = openingTimes[`${wk}_end`];
+           // recurring weekday pause
+           if (pauseWeekday !== null && pauseWeekday === weekday) {
+             addPause(dateKey, startTime, endTime);
+           }
+         });
 
-      if (!isClosed && dayStart && dayEnd) {
-        const openMin = toMinutes(dayStart);
-        const closeMin = toMinutes(dayEnd);
-        const booked = bookedByDate[dateKey] || [];
-        const daySlots = [];
+         current.setDate(current.getDate() + 1);
+       }
 
-        for (let t = openMin; t + SLOT_MINUTES <= closeMin; t += SLOT_MINUTES) {
-          const slotStart = t;
-          const slotEnd = t + SLOT_MINUTES;
+       return map;
+     }
 
-          const overlaps = booked.some(
-            ([bStart, bEnd]) => slotStart < bEnd && slotEnd > bStart,
-          );
+     function parseBookingDateTime(booking) {
+       const startValue =
+         booking.start ||
+         booking.start_at ||
+         booking.starts_at ||
+         booking.date ||
+         booking.start_time ||
+         null;
 
-          if (!overlaps) {
-            daySlots.push(minutesToHHMM(slotStart));
-          }
-        }
+       const endValue =
+         booking.end ||
+         booking.end_at ||
+         booking.ends_at ||
+         booking.end_time ||
+         null;
 
-        if (daySlots.length) {
-          slots[dateKey] = daySlots;
-        }
-      }
+       if (!startValue || !endValue) return null;
 
-      current.setDate(current.getDate() + 1);
-    }
+       const startDt = new Date(startValue);
+       const endDt = new Date(endValue);
 
-    return sendJson(res, 200, { slots });
+       if (isNaN(startDt.getTime()) || isNaN(endDt.getTime())) return null;
+
+       return { startDt, endDt };
+     }
+
+     const bookedByDate = {};
+
+     for (const booking of bookings) {
+       const parsed = parseBookingDateTime(booking);
+       if (!parsed) continue;
+
+       const dateKey = formatDate(parsed.startDt);
+       const startMin =
+         parsed.startDt.getHours() * 60 + parsed.startDt.getMinutes();
+       const endMin = parsed.endDt.getHours() * 60 + parsed.endDt.getMinutes();
+
+       if (!bookedByDate[dateKey]) bookedByDate[dateKey] = [];
+       bookedByDate[dateKey].push([startMin, endMin]);
+     }
+
+     const pausesByDate = buildPausesByDate(start, end, pauses);
+
+     const current = new Date(`${start}T00:00:00`);
+     const last = new Date(`${end}T00:00:00`);
+
+     while (current <= last) {
+       const dateKey = formatDate(current);
+       const wk = weekdayKey(current);
+
+       const isClosed = openingTimes[`${wk}_closed`];
+       const dayStart = openingTimes[`${wk}_start`];
+       const dayEnd = openingTimes[`${wk}_end`];
+
+       if (!isClosed && dayStart && dayEnd) {
+         const openMin = toMinutes(dayStart);
+         const closeMin = toMinutes(dayEnd);
+         const booked = bookedByDate[dateKey] || [];
+         const paused = pausesByDate[dateKey] || [];
+         const blocked = booked.concat(paused);
+         const daySlots = [];
+
+         for (
+           let t = openMin;
+           t + SLOT_MINUTES <= closeMin;
+           t += SLOT_MINUTES
+         ) {
+           const slotStart = t;
+           const slotEnd = t + SLOT_MINUTES;
+
+           const overlaps = blocked.some(
+             ([bStart, bEnd]) => slotStart < bEnd && slotEnd > bStart,
+           );
+
+           if (!overlaps) {
+             daySlots.push(minutesToHHMM(slotStart));
+           }
+         }
+
+         if (daySlots.length) {
+           slots[dateKey] = daySlots;
+         }
+       }
+
+       current.setDate(current.getDate() + 1);
+     }
+
+     return sendJson(res, 200, { slots, pauses });
   } catch (error) {
     return sendJson(res, 500, {
       error: 'Unexpected error',

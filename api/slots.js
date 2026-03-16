@@ -161,123 +161,159 @@ export default async function handler(req, res) {
        return String(v).slice(0, 5);
      }
 
-     function getThresholdInClinicTime(
-       hoursAhead = 8,
-       timeZone = 'Europe/Copenhagen',
-     ) {
-       const target = new Date(Date.now() + hoursAhead * 60 * 60 * 1000);
+      function getClinicDateTimeParts(
+        dateInput,
+        timeZone = 'Europe/Copenhagen',
+      ) {
+        const dt = new Date(dateInput);
 
-       const parts = new Intl.DateTimeFormat('en-CA', {
-         timeZone,
-         year: 'numeric',
-         month: '2-digit',
-         day: '2-digit',
-         hour: '2-digit',
-         minute: '2-digit',
-         hourCycle: 'h23',
-       }).formatToParts(target);
+        const parts = new Intl.DateTimeFormat('en-CA', {
+          timeZone,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hourCycle: 'h23',
+        }).formatToParts(dt);
 
-       const map = {};
-       parts.forEach((p) => {
-         if (p.type !== 'literal') map[p.type] = p.value;
-       });
+        const map = {};
+        parts.forEach((p) => {
+          if (p.type !== 'literal') map[p.type] = p.value;
+        });
 
-       return {
-         date: `${map.year}-${map.month}-${map.day}`,
-         time: `${map.hour}:${map.minute}`,
-       };
-     }
+        return {
+          dateKey: `${map.year}-${map.month}-${map.day}`,
+          hour: Number(map.hour),
+          minute: Number(map.minute),
+        };
+      }
 
-     function buildPausesByDate(start, end, pauses) {
-       const map = {};
+      function getThresholdInClinicTime(
+        hoursAhead = 8,
+        timeZone = 'Europe/Copenhagen',
+      ) {
+        const target = new Date(Date.now() + hoursAhead * 60 * 60 * 1000);
 
-       function addPause(dateKey, startTime, endTime) {
-         if (!startTime || !endTime) return;
-         if (!map[dateKey]) map[dateKey] = [];
-         map[dateKey].push([toMinutes(startTime), toMinutes(endTime)]);
-       }
+        const parts = new Intl.DateTimeFormat('en-CA', {
+          timeZone,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hourCycle: 'h23',
+        }).formatToParts(target);
 
-       const current = new Date(`${start}T00:00:00`);
-       const last = new Date(`${end}T00:00:00`);
+        const map = {};
+        parts.forEach((p) => {
+          if (p.type !== 'literal') map[p.type] = p.value;
+        });
 
-       while (current <= last) {
-         const dateKey = formatDate(current);
-         const weekday = current.getDay(); // 0=sun ... 6=sat
+        return {
+          date: `${map.year}-${map.month}-${map.day}`,
+          time: `${map.hour}:${map.minute}`,
+        };
+      }
 
-         pauses.forEach((pause) => {
-           const pauseDate = pause.date || pause.pause_date || null;
-           const pauseWeekday =
-             typeof pause.weekday === 'number'
-               ? pause.weekday
-               : typeof pause.day_of_week === 'number'
-                 ? pause.day_of_week
-                 : null;
+      function buildPausesByDate(start, end, pauses) {
+        const map = {};
 
-           const startTime = normalizeTime(
-             pause.start_time || pause.start || pause.from,
-           );
-           const endTime = normalizeTime(
-             pause.end_time || pause.end || pause.to,
-           );
+        function addPause(dateKey, startTime, endTime) {
+          if (!startTime || !endTime) return;
+          if (!map[dateKey]) map[dateKey] = [];
+          map[dateKey].push([toMinutes(startTime), toMinutes(endTime)]);
+        }
 
-           // exact date pause
-           if (pauseDate && pauseDate === dateKey) {
-             addPause(dateKey, startTime, endTime);
-             return;
-           }
+        const current = new Date(`${start}T00:00:00`);
+        const last = new Date(`${end}T00:00:00`);
 
-           // recurring weekday pause
-           if (pauseWeekday !== null && pauseWeekday === weekday) {
-             addPause(dateKey, startTime, endTime);
-           }
-         });
+        while (current <= last) {
+          const dateKey = formatDate(current);
+          const weekday = current.getDay(); // 0=sun ... 6=sat
 
-         current.setDate(current.getDate() + 1);
-       }
+          pauses.forEach((pause) => {
+            const pauseDate = pause.date || pause.pause_date || null;
+            const pauseWeekday =
+              typeof pause.weekday === 'number'
+                ? pause.weekday
+                : typeof pause.day_of_week === 'number'
+                  ? pause.day_of_week
+                  : null;
 
-       return map;
-     }
+            const startTime = normalizeTime(
+              pause.start_time || pause.start || pause.from,
+            );
+            const endTime = normalizeTime(
+              pause.end_time || pause.end || pause.to,
+            );
 
-     function parseBookingDateTime(booking) {
-       const startValue =
-         booking.start ||
-         booking.start_at ||
-         booking.starts_at ||
-         booking.date ||
-         booking.start_time ||
-         null;
+            // exact date pause
+            if (pauseDate && pauseDate === dateKey) {
+              addPause(dateKey, startTime, endTime);
+              return;
+            }
 
-       const endValue =
-         booking.end ||
-         booking.end_at ||
-         booking.ends_at ||
-         booking.end_time ||
-         null;
+            // recurring weekday pause
+            if (pauseWeekday !== null && pauseWeekday === weekday) {
+              addPause(dateKey, startTime, endTime);
+            }
+          });
 
-       if (!startValue || !endValue) return null;
+          current.setDate(current.getDate() + 1);
+        }
 
-       const startDt = new Date(startValue);
-       const endDt = new Date(endValue);
+        return map;
+      }
 
-       if (isNaN(startDt.getTime()) || isNaN(endDt.getTime())) return null;
+      function parseBookingDateTime(booking) {
+        const startValue =
+          booking.start ||
+          booking.start_at ||
+          booking.starts_at ||
+          booking.date ||
+          booking.start_time ||
+          null;
 
-       return { startDt, endDt };
-     }
+        const endValue =
+          booking.end ||
+          booking.end_at ||
+          booking.ends_at ||
+          booking.end_time ||
+          null;
 
-     const bookedByDate = {};
+        if (!startValue || !endValue) return null;
 
-     for (const booking of bookings) {
-       const parsed = parseBookingDateTime(booking);
-       if (!parsed) continue;
+        const startDt = new Date(startValue);
+        const endDt = new Date(endValue);
 
-       const dateKey = formatDate(parsed.startDt);
-       const startMin =
-         parsed.startDt.getHours() * 60 + parsed.startDt.getMinutes();
-       const endMin = parsed.endDt.getHours() * 60 + parsed.endDt.getMinutes();
+        if (isNaN(startDt.getTime()) || isNaN(endDt.getTime())) return null;
 
-       if (!bookedByDate[dateKey]) bookedByDate[dateKey] = [];
-       bookedByDate[dateKey].push([startMin, endMin]);
-     }
+        return { startDt, endDt };
+      }
+
+      const bookedByDate = {};
+
+      for (const booking of bookings) {
+        const parsed = parseBookingDateTime(booking);
+        if (!parsed) continue;
+
+        const startParts = getClinicDateTimeParts(
+          parsed.startDt,
+          'Europe/Copenhagen',
+        );
+        const endParts = getClinicDateTimeParts(
+          parsed.endDt,
+          'Europe/Copenhagen',
+        );
+
+        const dateKey = startParts.dateKey;
+        const startMin = startParts.hour * 60 + startParts.minute;
+        const endMin = endParts.hour * 60 + endParts.minute;
+
+        if (!bookedByDate[dateKey]) bookedByDate[dateKey] = [];
+        bookedByDate[dateKey].push([startMin, endMin]);
+      }
 
      const pausesByDate = buildPausesByDate(start, end, pauses);
 

@@ -150,6 +150,33 @@ export default async function handler(req, res) {
        return String(v).slice(0, 5);
      }
 
+     function getThresholdInClinicTime(
+       hoursAhead = 8,
+       timeZone = 'Europe/Copenhagen',
+     ) {
+       const target = new Date(Date.now() + hoursAhead * 60 * 60 * 1000);
+
+       const parts = new Intl.DateTimeFormat('en-CA', {
+         timeZone,
+         year: 'numeric',
+         month: '2-digit',
+         day: '2-digit',
+         hour: '2-digit',
+         minute: '2-digit',
+         hourCycle: 'h23',
+       }).formatToParts(target);
+
+       const map = {};
+       parts.forEach((p) => {
+         if (p.type !== 'literal') map[p.type] = p.value;
+       });
+
+       return {
+         date: `${map.year}-${map.month}-${map.day}`,
+         time: `${map.hour}:${map.minute}`,
+       };
+     }
+
      function buildPausesByDate(start, end, pauses) {
        const map = {};
 
@@ -246,6 +273,8 @@ export default async function handler(req, res) {
      const current = new Date(`${start}T00:00:00`);
      const last = new Date(`${end}T00:00:00`);
 
+     const minAllowed = getThresholdInClinicTime(8, 'Europe/Copenhagen');
+
      while (current <= last) {
        const dateKey = formatDate(current);
        const wk = weekdayKey(current);
@@ -269,13 +298,22 @@ export default async function handler(req, res) {
          ) {
            const slotStart = t;
            const slotEnd = t + SLOT_MINUTES;
+           const slotTime = minutesToHHMM(slotStart);
+
+           // 8-hour future rule
+           if (
+             dateKey < minAllowed.date ||
+             (dateKey === minAllowed.date && slotTime < minAllowed.time)
+           ) {
+             continue;
+           }
 
            const overlaps = blocked.some(
              ([bStart, bEnd]) => slotStart < bEnd && slotEnd > bStart,
            );
 
            if (!overlaps) {
-             daySlots.push(minutesToHHMM(slotStart));
+             daySlots.push(slotTime);
            }
          }
 
@@ -287,7 +325,7 @@ export default async function handler(req, res) {
        current.setDate(current.getDate() + 1);
      }
 
-     return sendJson(res, 200, { slots, pauses });
+     return sendJson(res, 200, { slots });
   } catch (error) {
     return sendJson(res, 500, {
       error: 'Unexpected error',

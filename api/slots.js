@@ -21,6 +21,7 @@ export default async function handler(req, res) {
 
     const start = req.query.start;
     const end = req.query.end;
+    const debugBookings = req.query.debugBookings === '1';
 
     if (!start || !end) {
       return sendJson(res, 400, { error: 'Missing start or end' });
@@ -76,31 +77,41 @@ export default async function handler(req, res) {
       });
     }
 
-     const pausesRes = await fetch(
-       `https://system.easypractice.net/api/v1/calendars/${calendarId}/pauses?page_size=200`,
-       { headers },
-     );
+    const pausesRes = await fetch(
+      `https://system.easypractice.net/api/v1/calendars/${calendarId}/pauses?page_size=200`,
+      { headers },
+    );
 
-     const pausesText = await pausesRes.text();
-     let pausesJson = null;
-     try {
-       pausesJson = JSON.parse(pausesText);
-     } catch (_) {}
+    const pausesText = await pausesRes.text();
+    let pausesJson = null;
+    try {
+      pausesJson = JSON.parse(pausesText);
+    } catch (_) {}
 
-     if (!pausesRes.ok) {
-       return sendJson(res, pausesRes.status, {
-         error: 'Pauses request failed',
-         detail: pausesText,
-       });
-     }
+    if (!pausesRes.ok) {
+      return sendJson(res, pausesRes.status, {
+        error: 'Pauses request failed',
+        detail: pausesText,
+      });
+    }
 
-     const bookings = Array.isArray(bookingsJson?.data)
-       ? bookingsJson.data
-       : Array.isArray(bookingsJson?.bookings)
-         ? bookingsJson.bookings
-         : Array.isArray(bookingsJson)
-           ? bookingsJson
-           : [];
+    const bookings = Array.isArray(bookingsJson?.data)
+      ? bookingsJson.data
+      : Array.isArray(bookingsJson?.bookings)
+        ? bookingsJson.bookings
+        : Array.isArray(bookingsJson)
+          ? bookingsJson
+          : [];
+
+    if (debugBookings) {
+      return sendJson(res, 200, {
+        start,
+        end,
+        bookingsCount: bookings?.length,
+        rawBookingsJson: bookingsJson,
+        bookingsSample: bookings?.slice(0, 10),
+      });
+    }
 
      const pauses = Array.isArray(pausesJson?.data)
        ? pausesJson.data

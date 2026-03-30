@@ -1,8 +1,8 @@
 import { sendJson } from './slots'; // Reuse sendJson function
 
-// Get Airtable Base URL and API Token from environment variables
+// Get Airtable API Token and Base URL from environment variables
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_TOKEN;
-const AIRTABLE_BASE_URL = process.env.AIRTABLE_BASE_URL;
+const AIRTABLE_BASE_URL = process.env.AIRTABLE_BASE_URL; // Base URL should include the baseId and table name
 
 // Create a new discount lead record in Airtable
 async function createDiscountLead(email) {
@@ -24,7 +24,7 @@ async function createDiscountLead(email) {
   };
 
   const response = await fetch(
-    `${AIRTABLE_BASE_URL}/v0/appXXXXXXXXXX/Discount%20Leads`,
+    `${AIRTABLE_BASE_URL}/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_TABLE_ID}`,
     {
       method: 'POST',
       headers: headers,
@@ -41,7 +41,7 @@ async function createDiscountLead(email) {
   return result;
 }
 
-// Fetch discount stats
+// Fetch discount stats from Airtable
 async function getDiscountStats() {
   const headers = {
     Authorization: `Bearer ${AIRTABLE_API_KEY}`,
@@ -49,7 +49,7 @@ async function getDiscountStats() {
   };
 
   const response = await fetch(
-    `${AIRTABLE_BASE_URL}/v0/appXXXXXXXXXX/Discount%20Leads`,
+    `${AIRTABLE_BASE_URL}/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_TABLE_ID}`,
     {
       method: 'GET',
       headers: headers,
@@ -73,11 +73,6 @@ async function getDiscountStats() {
     if (record.fields['Discount Applied']) totalApplied++;
     if (record.fields['Booked/Paid']) totalBooked++;
   });
-
-  console.log('totalApplied', totalApplied);
-  console.log('totalBooked', totalBooked);
-  console.log('remainingSlots', 30 - totalBooked);
-  console.log('progressPercent', (totalBooked / 30) * 100);
 
   return {
     totalApplied,

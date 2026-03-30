@@ -75,6 +75,11 @@ async function getDiscountStats() {
     if (record.fields['Booked/Paid']) totalBooked++;
   });
 
+  console.log('totalApplied', totalApplied);
+  console.log('totalBooked', totalBooked);
+  console.log('remainingSlots', 30 - totalBooked);
+  console.log('progressPercent', (totalBooked / 30) * 100);
+
   return {
     totalApplied,
     totalBooked,

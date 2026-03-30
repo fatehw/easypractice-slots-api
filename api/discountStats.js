@@ -1,5 +1,4 @@
 import { sendJson } from './slots'; // Reuse sendJson function
-import fetch from 'node-fetch';
 
 // Get Airtable Base URL and API Token from environment variables
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_TOKEN;

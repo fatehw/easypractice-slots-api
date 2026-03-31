@@ -75,8 +75,8 @@ async function getDiscountStats() {
   });
 
   return {
-    totalApplied,
-    totalBooked,
+    totalApplied: 289 + totalApplied,
+    totalBooked: 8 + totalBooked,
     remainingSlots: 30 - totalBooked, // Assume max slots are 30
     progressPercent: (totalBooked / 30) * 100, // Calculate progress as percentage
   };

@@ -19,14 +19,6 @@ export default async function handler(req, res) {
     const calendarId = process.env.EASYPRACTICE_CALENDAR_ID_STORRE_PENIS;
     const token = process.env.EASYPRACTICE_TOKEN;
 
-    // "Bedre rejsning" (630246) cross-blocks "Større penis" slots in EasyPractice.
-    // We must fetch its bookings+pauses too so we don't offer already-blocked slots.
-    // Set EASYPRACTICE_CALENDAR_ID_LINKED=630246 in your env (or it falls back to EASYPRACTICE_CALENDAR_ID).
-    const linkedCalendarId =
-      process.env.EASYPRACTICE_CALENDAR_ID_LINKED ||
-      process.env.EASYPRACTICE_CALENDAR_ID ||
-      null;
-
     const start = req.query.start;
     const end = req.query.end;
     const debugBookings = req.query.debugBookings === '1';
@@ -65,34 +57,19 @@ export default async function handler(req, res) {
 
     const openingTimes = openingJson?.data?.times || openingJson?.times || {};
 
-    // ── Fetch bookings + pauses for BOTH calendars in parallel ──
-    function bookingsUrl(calId) {
-      return `https://system.easypractice.net/api/v1/bookings?calendar_id=${encodeURIComponent(calId)}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&page_size=200`;
-    }
-    function pausesUrl(calId) {
-      return `https://system.easypractice.net/api/v1/calendars/${calId}/pauses?page_size=200`;
-    }
-
-    // Always fetch the main calendar; conditionally fetch the linked one
-    const fetchList = [
-      fetch(bookingsUrl(calendarId), { headers }),
-      fetch(pausesUrl(calendarId), { headers }),
-      linkedCalendarId
-        ? fetch(bookingsUrl(linkedCalendarId), { headers })
-        : Promise.resolve(null),
-      linkedCalendarId
-        ? fetch(pausesUrl(linkedCalendarId), { headers })
-        : Promise.resolve(null),
-    ];
-
-    const [bookingsRes, pausesRes, linkedBookingsRes, linkedPausesRes] =
-      await Promise.all(fetchList);
+    const bookingsRes = await fetch(
+      `https://system.easypractice.net/api/v1/bookings?calendar_id=${encodeURIComponent(
+        calendarId,
+      )}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&page_size=200`,
+      { headers },
+    );
 
     const bookingsText = await bookingsRes.text();
     let bookingsJson = null;
     try {
       bookingsJson = JSON.parse(bookingsText);
     } catch (_) {}
+
     if (!bookingsRes.ok) {
       return sendJson(res, bookingsRes.status, {
         error: 'Bookings request failed',
@@ -100,11 +77,17 @@ export default async function handler(req, res) {
       });
     }
 
+    const pausesRes = await fetch(
+      `https://system.easypractice.net/api/v1/calendars/${calendarId}/pauses?page_size=200`,
+      { headers },
+    );
+
     const pausesText = await pausesRes.text();
     let pausesJson = null;
     try {
       pausesJson = JSON.parse(pausesText);
     } catch (_) {}
+
     if (!pausesRes.ok) {
       return sendJson(res, pausesRes.status, {
         error: 'Pauses request failed',
@@ -112,62 +95,31 @@ export default async function handler(req, res) {
       });
     }
 
-    // Linked calendar responses (non-fatal if they fail)
-    let linkedBookingsJson = null;
-    let linkedPausesJson = null;
-    if (linkedBookingsRes) {
-      try {
-        linkedBookingsJson = JSON.parse(await linkedBookingsRes.text());
-      } catch (_) {}
-    }
-    if (linkedPausesRes) {
-      try {
-        linkedPausesJson = JSON.parse(await linkedPausesRes.text());
-      } catch (_) {}
-    }
-
-    function extractBookings(json) {
-      return Array.isArray(json?.data)
-        ? json.data
-        : Array.isArray(json?.bookings)
-          ? json.bookings
-          : Array.isArray(json)
-            ? json
-            : [];
-    }
-    function extractPauses(json) {
-      return Array.isArray(json?.data)
-        ? json.data
-        : Array.isArray(json?.pauses)
-          ? json.pauses
-          : Array.isArray(json)
-            ? json
-            : [];
-    }
-
-    // Merge bookings from both calendars — all block the "Større penis" slots
-    const bookings = [
-      ...extractBookings(bookingsJson),
-      ...extractBookings(linkedBookingsJson),
-    ];
+    const bookings = Array.isArray(bookingsJson?.data)
+      ? bookingsJson.data
+      : Array.isArray(bookingsJson?.bookings)
+        ? bookingsJson.bookings
+        : Array.isArray(bookingsJson)
+          ? bookingsJson
+          : [];
 
     if (debugBookings) {
       return sendJson(res, 200, {
         start,
         end,
-        mainCalendarId: calendarId,
-        linkedCalendarId: linkedCalendarId || 'not set',
         bookingsCount: bookings?.length,
-        mainBookingsSample: extractBookings(bookingsJson)?.slice(0, 5),
-        linkedBookingsSample: extractBookings(linkedBookingsJson)?.slice(0, 5),
+        rawBookingsJson: bookingsJson,
+        bookingsSample: bookings?.slice(0, 10),
       });
     }
 
-    // Merge pauses from both calendars too
-    const pauses = [
-      ...extractPauses(pausesJson),
-      ...extractPauses(linkedPausesJson),
-    ];
+    const pauses = Array.isArray(pausesJson?.data)
+      ? pausesJson.data
+      : Array.isArray(pausesJson?.pauses)
+        ? pausesJson.pauses
+        : Array.isArray(pausesJson)
+          ? pausesJson
+          : [];
 
     const SLOT_MINUTES = 15;
     const slots = {};

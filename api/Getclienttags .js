@@ -10,9 +10,9 @@ export default async function handler(req, res) {
     const token = process.env.EASYPRACTICE_CLIENT_TOKEN;
 
     if (!token) {
-      return res
-        .status(500)
-        .json({ error: 'Missing environment variable: EASYPRACTICE_TOKEN' });
+      return res.status(500).json({
+        error: 'Missing environment variable: EASYPRACTICE_CLIENT_TOKEN',
+      });
     }
 
     const headers = {

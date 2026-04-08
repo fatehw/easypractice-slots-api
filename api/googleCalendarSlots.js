@@ -18,13 +18,13 @@ export function sendJson(res, status, data) {
 // {"monday":{"open":"08:00","close":"17:00","closed":false},"saturday":{"closed":true},...}
 //
 const DEFAULT_WORKING_HOURS = {
-  monday: { open: '08:30', close: '17:00', closed: false },
-  tuesday: { open: '08:30', close: '17:00', closed: false },
-  wednesday: { open: '08:30', close: '17:00', closed: false },
-  thursday: { open: '08:30', close: '16:00', closed: false },
-  friday: { open: '08:30', close: '16:00', closed: false },
-  saturday: { open: '08:00', close: '17:00', closed: true },
-  sunday: { open: '08:00', close: '17:00', closed: true },
+  monday: { open: '01:00', close: '24:00', closed: false },
+  tuesday: { open: '01:00', close: '24:00', closed: false },
+  wednesday: { open: '01:00', close: '24:00', closed: false },
+  thursday: { open: '01:00', close: '24:00', closed: false },
+  friday: { open: '01:00', close: '24:00', closed: false },
+  saturday: { open: '01:00', close: '24:00', closed: true },
+  sunday: { open: '01:00', close: '24:00', closed: true },
 };
 
 // ─── Google Service Account JWT auth (no npm packages needed) ───────────────

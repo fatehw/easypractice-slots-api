@@ -22,6 +22,7 @@ export default async function handler(req, res) {
     const start = req.query.start;
     const end = req.query.end;
     const debugBookings = req.query.debugBookings === '1';
+    const debugOpeningTimes = req.query.debugOpeningTimes === '1';
 
     if (!start || !end) {
       return sendJson(res, 400, { error: 'Missing start or end' });
@@ -103,6 +104,13 @@ export default async function handler(req, res) {
           ? bookingsJson
           : [];
 
+    if (debugOpeningTimes) {
+      return sendJson(res, 200, {
+        openingTimes,
+        rawOpeningJson: openingJson,
+      });
+    }
+
     if (debugBookings) {
       return sendJson(res, 200, {
         start,
@@ -110,6 +118,7 @@ export default async function handler(req, res) {
         bookingsCount: bookings?.length,
         rawBookingsJson: bookingsJson,
         bookingsSample: bookings?.slice(0, 10),
+        pauses: Array.isArray(pausesJson?.data) ? pausesJson.data : pausesJson,
       });
     }
 

@@ -1,0 +1,8 @@
+{
+    "crons": [
+        {
+            "path": "/api/syncTodayClients",
+            "schedule": "0 23 * * *"
+        }
+    ]
+}

@@ -184,7 +184,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const token = process.env.EASYPRACTICE_CLIENT_VERCEL_TOKEN;
+    const token = process.env.EASYPRACTICE_CLIENT_TOKEN;
     const webhookUrl = process.env.ZAPIER_SYNC_CLIENTS_WEBHOOK_URL;
     const debug = req.query.debug === '1';
     const dateKey = req.query.date || getTodayKey();

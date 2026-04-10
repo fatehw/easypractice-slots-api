@@ -19,6 +19,13 @@ export default async function handler(req, res) {
     const calendarId = process.env.EASYPRACTICE_CALENDAR_ID_STORRE_PENIS;
     const token = process.env.EASYPRACTICE_TOKEN;
 
+    // "Better erection (impotence)" calendar blocks "Bigger penises" slots via
+    // EasyPractice blocking rules. We must fetch its bookings too so we don't
+    // offer slots that are already blocked by that calendar.
+    // Set EASYPRACTICE_CALENDAR_ID_LINKED=630246 in your Vercel env.
+    const linkedCalendarId =
+      process.env.EASYPRACTICE_CALENDAR_ID_LINKED || null;
+
     const start = req.query.start;
     const end = req.query.end;
     const debugBookings = req.query.debugBookings === '1';
@@ -58,12 +65,17 @@ export default async function handler(req, res) {
 
     const openingTimes = openingJson?.data?.times || openingJson?.times || {};
 
-    const bookingsRes = await fetch(
-      `https://system.easypractice.net/api/v1/bookings?calendar_id=${encodeURIComponent(
-        calendarId,
-      )}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&page_size=200`,
-      { headers },
-    );
+    // Fetch bookings from main calendar + linked calendar in parallel
+    function bookingsUrl(calId) {
+      return `https://system.easypractice.net/api/v1/bookings?calendar_id=${encodeURIComponent(calId)}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&page_size=200`;
+    }
+
+    const [bookingsRes, linkedBookingsRes] = await Promise.all([
+      fetch(bookingsUrl(calendarId), { headers }),
+      linkedCalendarId
+        ? fetch(bookingsUrl(linkedCalendarId), { headers })
+        : Promise.resolve(null),
+    ]);
 
     const bookingsText = await bookingsRes.text();
     let bookingsJson = null;
@@ -76,6 +88,14 @@ export default async function handler(req, res) {
         error: 'Bookings request failed',
         detail: bookingsText,
       });
+    }
+
+    // Parse linked calendar bookings (non-fatal if missing/failed)
+    let linkedBookingsJson = null;
+    if (linkedBookingsRes) {
+      try {
+        linkedBookingsJson = JSON.parse(await linkedBookingsRes.text());
+      } catch (_) {}
     }
 
     const pausesRes = await fetch(
@@ -96,13 +116,21 @@ export default async function handler(req, res) {
       });
     }
 
-    const bookings = Array.isArray(bookingsJson?.data)
-      ? bookingsJson.data
-      : Array.isArray(bookingsJson?.bookings)
-        ? bookingsJson.bookings
-        : Array.isArray(bookingsJson)
-          ? bookingsJson
-          : [];
+    function extractBookings(json) {
+      return Array.isArray(json?.data)
+        ? json.data
+        : Array.isArray(json?.bookings)
+          ? json.bookings
+          : Array.isArray(json)
+            ? json
+            : [];
+    }
+
+    // Merge bookings from both calendars — all block "Bigger penises" slots
+    const bookings = [
+      ...extractBookings(bookingsJson),
+      ...extractBookings(linkedBookingsJson),
+    ];
 
     if (debugOpeningTimes) {
       return sendJson(res, 200, {
@@ -115,8 +143,10 @@ export default async function handler(req, res) {
       return sendJson(res, 200, {
         start,
         end,
+        linkedCalendarId: linkedCalendarId || 'not set',
         bookingsCount: bookings?.length,
-        rawBookingsJson: bookingsJson,
+        mainCalendarBookings: extractBookings(bookingsJson)?.length,
+        linkedCalendarBookings: extractBookings(linkedBookingsJson)?.length,
         bookingsSample: bookings?.slice(0, 10),
         pauses: Array.isArray(pausesJson?.data) ? pausesJson.data : pausesJson,
       });

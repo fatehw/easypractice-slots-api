@@ -27,7 +27,7 @@ export default async function handler(req, res) {
     // Phone call slots are ALWAYS 17:00–19:00, 30-min duration
     const PHONE_START = '17:00';
     const PHONE_END = '19:00';
-    const SLOT_MINUTES = 30;
+    const SLOT_MINUTES = 15;
 
     if (!start || !end) {
       return sendJson(res, 400, { error: 'Missing start or end' });

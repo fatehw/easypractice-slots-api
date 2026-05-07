@@ -46,8 +46,18 @@ export default async function handler(req, res) {
       return sendJson(500, { error: 'Missing env vars: EASYPRACTICE_CALENDAR_ID_PHONE_CALL or EASYPRACTICE_TOKEN' });
     }
 
-    const VALID_TIMES = ['17:00', '17:30', '18:00', '18:30'];
-    const DURATION_MIN = 30;
+    const VALID_TIMES = [
+      '17:00',
+      '17:15',
+      '17:30',
+      '17:45',
+      '18:00',
+      '18:15',
+      '18:30',
+      '18:45',
+      '19:00',
+    ];
+    const DURATION_MIN = 15;
     const SEARCH_DAYS  = 14; // look ahead up to 14 days
 
     const headers = {
